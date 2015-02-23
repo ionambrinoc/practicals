@@ -15,12 +15,6 @@ h.update(str(secret))               #then hash secret using MD5
 Hs = h.digest()
 print "Hash of secret: ", Hs
 
-urB  = u^rB%p                       #exponentiate for Diffie-Hellman
-urBp = u^rBp%p
-print "Generated ", urB, urBp
-
-#PKAlice =
-#SK =
 
 try:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -28,8 +22,8 @@ except socket.error:
     print 'Failed to create socket'
     sys.exit()
 print 'Socket Created'
-host = '127.0.0.1'; #run everything on localhost
-port = 4323;
+host = 'localhost'; #run everything on localhost
+port = 4326;
  
 try:
     remote_ip = socket.gethostbyname( host ) 
@@ -42,14 +36,16 @@ print 'Socket Connected to ' + host + ' on ip ' + remote_ip
  
 p = long(s.recv(512))	#receive Diffie-Hellman ingredients from server
 u = long(s.recv(128))	#message 0 in protocol spec.
-print("Received DH ingredients")
+print "Received DH ingredients " + str(p) + 'and '+str(u)
 
-urA  = long(s.recv(128))    #receive message 1
-urAp = long(s.recv(128))
-
-urB  = u^rB%p
+urB  = u^rB%p                       #exponentiate for Diffie-Hellman
 urBp = u^rBp%p
 print "Generated ", urB, urBp
+
+urA  = long(s.recv(127))   #receive message 1
+print "Received "+str(urA)
+urAp = long(s.recv(127))
+print "Received " + str(urA) + " and " +urAp + " as message 1"
 
 try :                       #send message 2
     s.sendall(str(urB))
@@ -67,7 +63,7 @@ y     = (urAp   ^ rBp) % p  # y = u^(r'_ar'_b) mod p
 xb    = (x^Hs)         % p  # x_b=H^H(s_b) known only by Bob
 yrppb = (y^rBpp)       % p  # y^r''_b for fresh r''_b generated above
 
-yrppa = long(s.recv(128))   # receive message 3
+yrppa = long(s.recv(129))   # receive message 3
 try :                       #send message 4
     s.sendall(str(yrppb))
 except socket.error:
@@ -77,7 +73,7 @@ except socket.error:
 z = yrppa^rBpp      #known by both, to be used later in the check
 bobCheck = xb ^ (u^(rBp))
 
-aliceCheck = long(s.recv(128)) # message 5
+aliceCheck = long(s.recv(129)) # message 5
 try :                       #send message 6
     s.sendall(str(bobCheck))
 except socket.error:
@@ -91,10 +87,10 @@ except socket.error:
     print 'Send failed'
     sys.exit()
 
-rAp = long(s.recv(128))     #message 8
+rAp = long(s.recv(129))     #message 8
 
 if (t^(rAp * rBp)) % p == z:
           print "The secrets match!"
-    else: print "The secrets don't match."
+else: print "The secrets don't match."
 s.close() #done
 print urA, urAp, urB, urBp
