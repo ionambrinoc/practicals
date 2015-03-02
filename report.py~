@@ -1,8 +1,7 @@
-##############################ADVANCED SECURITY PRACTICAL ASSIGNMENT 1#################################
-###########################CRYPTOGRAPHY FOR PRIVACY####HILARY TERM 2015################################
+##############################ADVANCED SECURITY PRACTICAL ASSIGNMENT 1###############################
+###########################CRYPTOGRAPHY FOR PRIVACY####HILARY TERM 2015##############################
 
-"""PROTOCOL IDEA AND SPECIFICATION---------------------------------------------------------------------
-
+"""PROTOCOL IDEA AND SPECIFICATION-------------------------------------------------------------------
 0. Sam   -> Alice, Bob:  prime p, u coprime with p		       --server prepares (double) D-H
 1. Alice -> Bob       :  u^r_a, u^r'_a				       --fresh random numbers r_a,r'_a
 2. Bob   -> Alice     :  u^r_b, u^r'_b                                 --fresh random numbers r_b,r'_b
@@ -39,36 +38,117 @@ Protocol strengths: Alice can detect whether Bob has been dishonest; Bob commits
 		    Finally, note that there are only 8 messages exchanged, an arguably small number.
 
 Proof of work: t^(r'_ar'_b)=(x_ax_b^(-1))u^(r'_ar'_b(r''_ar''_b)) = 1 * z since s_a=s_b => x_a=x_b"""
-###SAMPLE CODE FOR SERVER PROCESS - "SAM"#############################################################
-import socket   #using example provided in practical manual
-import sys
 
-HOST = ''	# Symbolic name, meaning all available interfaces
+# I have run into implementation problems in the Python code, specifically in the transmission
+# of messages over TCP/IP, with failures occurring nondeterministically throughout the code.
+
+# Extra assumption: we assume that we are working over authenticated secure channels (eg TLS), 
+# in order to simplify implementation (this is why we are not sending encrypted information).
+
+###SAMPLE CODE FOR SERVER PROCESS - "ALICE"#################################################
+
+import socket 				# note that Alice is one of the participants, the one who
+import sys				# does not invert numbers modulo p; she acts as a server
+from thread import *		# for simplicity of implementation only, and this is not
+				# necessary for the purposes of the (abstract) protocol.
+
+from Crypto.Util import number   # generate random large prime (p in specification)
+prime = number.getPrime(512)	 # (first ingredient for Diffie-Hellman); all
+p = prime
+u = number.getRandomInteger(128) # generate u coprime with p; Diffie-Hellman base
+import fractions				 # (second ingredient for Diffie-Hellman)
+while fractions.gcd(u,prime)!=1:
+	u = number.getRandomInteger(128)
+
+from Crypto.Util import number 		# generate fresh random numbers for 
+rA  = number.getRandomInteger(128)	# use in protocol; Bob also does this step
+rAp = number.getRandomInteger(128)
+rApp= number.getRandomInteger(128)
+from Crypto.Hash import MD5
+h = MD5.new()
+secret = 12345678				#manually define secret; same to be done for Bob
+h.update(str(secret))				#then hash secret using MD5
+Hs = h.digest()
+print "Hash of secret: ", h.hexdigest()
+urA  = (u^rA) %p             			#exponentiate for Diffie-Hellman
+urAp = (u^rAp)%p
+print "Generated ", hex(urA), hex(urAp)
+#cryptographic component generation now done.
+#from now on act as a socket server and just pass messages on
+
+HOST = ''  			# listen on all connections
 PORT = 4321
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+print 'Socket created'
+
 try:					#Bind socket to local host and port
-	s.bind((HOST, PORT))
-except socket.error as msg:
-	print 'Bind failed. Error Code : ' + str(msg[0]) + ' Message ' + msg[1]
-	sys.exit()	
+    s.bind((HOST, PORT))
+except socket.error , msg:
+    print 'Bind failed. Error Code : ' + str(msg[0]) + ' Message ' + msg[1]
+    sys.exit()
 print 'Socket bind complete'
 
-s.listen(10) #Start listening on socket
+s.listen(10)				#Start listening on socket
+print 'Socket now listening'
 
-#Function for handling connections. This will be used to create threads
-def clientthread(conn):	
-	while True: #infinite loop so that function do not terminate and thread do not end.		
-		data = conn.recv(1024) #Receiving from client
-		reply = 'OK...' + data
-		if not data: break	
-		conn.sendall(reply)	
-	conn.close() #come out of loop
+#Function for handling connections, to be used to create thread for Bob;
+#very simplified to make not a general socket server, but one that strictly
+#carries out required protocol with Bob.
+def clientthread(conn):
+	conn.sendall(str(prime))	# message 0: pass Bob ingredients for Diffie-Hellman
+	conn.sendall(str(u))		# as strings (sendall does not take longs)
+	print 'sent ' + hex(p) + ' and '+ hex(u) +' as message 0'
+        
 
-while 1:				        #now keep talking with the client
-	conn, addr = s.accept()	     #wait to accept a connection - blocking call
-	print 'Connected with ' + addr[0] + ':' + str(addr[1])	#start new thread t
-	#akes 1st argument as a function name to be run, second is the tuple of 
-	start_new_thread(clientthread ,(conn,)) #arguments to the function.
+	conn.sendall(str(urA))		# message 1: two Diffie-Hellman messages.
+	conn.sendall(str(urAp))
+	print 'sent '+ hex(urA) + ' and ' + hex(urAp) + ' as message 1'
+
+	urB = long(conn.recv(4096))	# message 2: Bob's corresponding D-H messages.
+	urBp= long(conn.recv(4096))  # reconverted into (useful) longs.
+	print 'got '+ hex(urB) + ' and ' + hex(urBp) + ' as message 2'
+
+	x     = (urB    ^ rA ) % p 	# x=u^(r_ar_b) mod p
+	y     = (urBp   ^ rAp) % p 	# y = u^(r'_ar'_b) mod p
+	xa 	  = (x^Hs)         % p	# x_a=x^H(s_a), known by Alice only
+	yrppa = (y^rApp)	   % p  # y^r''_a for fresh r''_a generated above 
+	print 'computed' + str(x) +' and '+str(y)+' and '+str(xa)+' and '+str(yrppa)   
+	conn.sendall(str(yrppa))    # message 3
+	print 'sent '+str(yrppa)+' as message 3'
+	yrppb = long(conn.recv(4096))# message 4, from Bob: y^(-r''_b)
+	print 'got '+str(yrppb)+' as message 4'
+
+	z = yrppb^rApp			  % p   # known by both, to be used later in the check.
+	aliceCheck = xa*(u^(rAp)) % p
+	print 'computed' + str(z) +' and '+str(aliceCheck)
+
+	conn.sendall(str(aliceCheck))   # message 5, relying  on hash and discrete 
+					# to ensure secret is not leaked; this is the
+					# only place where a function of the secret is
+					# actually transferred between Alice and Bob.
+	print 'sent '+str(aliceCheck)+' as message 5'
+	bobCheck = long(conn.recv(4096)) # message 6, Bob's analogous to 5.
+	print 'got '+str(bobCheck)+' as message 6'
+
+	t = aliceCheck * bobCheck % p
+	rBp = long(conn.recv(4096))		# reverse message order; Bob discloses one of the 
+	if (u^rBp) % p != urBp:
+		print "BOB IS LYING, DROPPING CONNECTION"
+		s.close()				#and drop connection; otherwise...
+	conn.sendall(str(rAp))			# message 8; do the same as Bob
+
+	if (t^(rAp * rBp)) % p == z:
+		print "The secrets match!"
+	else: print "The secrets don't match."
+
+  	conn.close()				#come out of loop
+while 1:						#now talk to Bob
+    conn, addr = s.accept()		#wait to accept connection; blocking call
+    print 'Connection accepted'
+    print 'Connected with ' + addr[0] + ':' + str(addr[1]) + 'as Bob'
+    start_new_thread(clientthread ,(conn,))
 s.close()
-   
+
+###SAMPLE CODE FOR ONE PROCESS - "BOB" (INVERTING)##########################################
+
 

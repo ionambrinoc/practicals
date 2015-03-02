@@ -1,4 +1,4 @@
-###SAMPLE CODE FOR SERVER PROCESS - "ALICE"#################################################
+###SAMPLE CODE FOR SERVER PROCESS - "ALICE"############################################################
 
 import socket 				# note that Alice is one of the participants, the one who
 import sys					# does not invert numbers modulo p; she acts as a server
